@@ -3,8 +3,10 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./interfaces/IMarket.sol";
-import "./interfaces/IDiscountCalculator.sol";
+import "../interfaces/IMarket.sol";
+import "../interfaces/ISecondaryMarket.sol";
+
+import "../interfaces/IDiscountCalculator.sol";
 
 
 
@@ -22,7 +24,7 @@ Administrative functions for updating market addresses
 /// @notice Provides routing and price discovery across primary and secondary markets
 contract MarketRouter is Ownable, ReentrancyGuard {
     IMarket public primaryMarket;
-    IMarket public secondaryMarket;
+    ISecondaryMarket public secondaryMarket;  // Updated interface
     IDiscountCalculator public calculator;
 
     struct MarketPrice {
@@ -50,7 +52,7 @@ contract MarketRouter is Ownable, ReentrancyGuard {
         address _calculator
     ) {
         primaryMarket = IMarket(_primaryMarket);
-        secondaryMarket = IMarket(_secondaryMarket);
+        secondaryMarket = ISecondaryMarket(_secondaryMarket);
         calculator = IDiscountCalculator(_calculator);
     }
 

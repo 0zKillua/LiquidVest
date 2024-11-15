@@ -4,64 +4,36 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/IBaseReceivable.sol";
-import "./interfaces/IDiscountCalculator.sol";
+import "../interfaces/ISecondaryMarket.sol";
+import "../interfaces/IBaseReceivable.sol";
+import "../interfaces/IDiscountCalculator.sol";
 
-/// @title SecondaryMarket - Manages resale of receivables
-/// @notice Facilitates secondary market transactions between investors
-contract SecondaryMarket is ReentrancyGuard, Pausable, Ownable {
+contract SecondaryMarket is ISecondaryMarket, ReentrancyGuard, Pausable, Ownable {
     IBaseReceivable public immutable receivableToken;
     IDiscountCalculator public immutable calculator;
     
-    struct SecondaryListing {
-        address seller;
-        uint256 price;
-        bool isActive;
-        uint256 timestamp;
-    }
-    
-    mapping(uint256 => SecondaryListing) public secondaryListings;
-    mapping(address => uint256) public proceeds;
+    mapping(uint256 => SecondaryListing) public override secondaryListings;
+    mapping(address => uint256) public sellerProceeds;
     
     uint256 public constant LISTING_DURATION = 7 days;
-    uint256 public protocolFee = 25; // 0.25% in basis points
-    
-    event SecondaryListingCreated(
-        uint256 indexed tokenId,
-        address indexed seller,
-        uint256 price
-    );
-    event SecondaryListingSold(
-        uint256 indexed tokenId,
-        address indexed seller,
-        address indexed buyer,
-        uint256 price
-    );
-    event SecondaryListingCanceled(
-        uint256 indexed tokenId,
-        address indexed seller
-    );
-    
-    constructor(address _receivableToken, address _calculator) {
+    uint256 public protocolFee = 100; // 1% in basis points
+
+    constructor(
+        address _receivableToken,
+        address _calculator
+    ) {
         receivableToken = IBaseReceivable(_receivableToken);
         calculator = IDiscountCalculator(_calculator);
     }
-    
-    /// @notice Lists a receivable on the secondary market
-    /// @param tokenId The ID of the receivable token
-    /// @param price The listing price in base currency
+
     function createSecondaryListing(
         uint256 tokenId,
         uint256 price
-    ) external whenNotPaused nonReentrant {
+    ) external override nonReentrant whenNotPaused returns (bool) {
+        require(price > 0, "Price must be positive");
         require(
             receivableToken.ownerOf(tokenId) == msg.sender,
             "Not token owner"
-        );
-        require(price > 0, "Price must be above zero");
-        require(
-            receivableToken.getApprovalForAll(msg.sender, address(this)),
-            "Market not approved"
         );
         
         secondaryListings[tokenId] = SecondaryListing({
@@ -72,13 +44,12 @@ contract SecondaryMarket is ReentrancyGuard, Pausable, Ownable {
         });
         
         emit SecondaryListingCreated(tokenId, msg.sender, price);
+        return true;
     }
-    
-    /// @notice Purchases a listed receivable from secondary market
-    /// @param tokenId The ID of the receivable to purchase
+
     function buySecondaryListing(
         uint256 tokenId
-    ) external payable whenNotPaused nonReentrant {
+    ) external override payable nonReentrant whenNotPaused {
         SecondaryListing memory listing = secondaryListings[tokenId];
         require(listing.isActive, "Listing not active");
         require(
@@ -88,12 +59,7 @@ contract SecondaryMarket is ReentrancyGuard, Pausable, Ownable {
         require(msg.value >= listing.price, "Insufficient payment");
         
         secondaryListings[tokenId].isActive = false;
-        
-        uint256 feeAmount = (msg.value * protocolFee) / 10000;
-        uint256 sellerProceeds = msg.value - feeAmount;
-        
-        proceeds[listing.seller] += sellerProceeds;
-        proceeds[owner()] += feeAmount;
+        sellerProceeds[listing.seller] += msg.value;
         
         receivableToken.transferFrom(listing.seller, msg.sender, tokenId);
         
@@ -104,14 +70,60 @@ contract SecondaryMarket is ReentrancyGuard, Pausable, Ownable {
             msg.value
         );
     }
-    
-    /// @notice Updates the protocol fee
-    /// @param newFee New fee in basis points
+
+    function cancelSecondaryListing(
+        uint256 tokenId
+    ) external override nonReentrant {
+        SecondaryListing memory listing = secondaryListings[tokenId];
+        require(listing.seller == msg.sender, "Not the seller");
+        require(listing.isActive, "Listing not active");
+        
+        secondaryListings[tokenId].isActive = false;
+        
+        emit SecondaryListingCanceled(tokenId, msg.sender);
+    }
+
+    function getListing(
+        uint256 tokenId
+    ) external view override returns (
+        address seller,
+        uint256 price,
+        bool isActive
+    ) {
+        SecondaryListing memory listing = secondaryListings[tokenId];
+        return (listing.seller, listing.price, listing.isActive);
+    }
+
+    // Additional functions for protocol management
     function updateProtocolFee(uint256 newFee) external onlyOwner {
         require(newFee <= 1000, "Fee too high"); // Max 10%
         protocolFee = newFee;
     }
-    
-    // Additional functions similar to PrimaryMarket (cancelListing, withdrawProceeds, pause/unpause)
-    // ... implementation continues
+
+    function withdrawProceeds() external nonReentrant {
+        uint256 pendingProceeds = sellerProceeds[msg.sender];
+        require(pendingProceeds > 0, "No proceeds available");
+        
+        sellerProceeds[msg.sender] = 0;
+        
+        (bool success, ) = payable(msg.sender).call{value: pendingProceeds}("");
+        require(success, "Transfer failed");
+    }
+
+    function calculateEarlyExitPenalty(
+        uint256 price
+    ) public view returns (uint256) {
+        return (price * protocolFee) / 10000;
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    // Function to handle direct ETH transfers
+    receive() external payable {}
 }

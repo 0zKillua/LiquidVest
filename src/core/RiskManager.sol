@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/IBaseReceivable.sol";
+import "../interfaces/IBaseReceivable.sol";
 
 /// @title RiskManager - Manages risk assessment for receivables
 /// @notice Handles risk tier assignment and validation

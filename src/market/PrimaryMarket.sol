@@ -4,12 +4,14 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./interfaces/IBaseReceivable.sol";
-import "./interfaces/IDiscountCalculator.sol";
+
+import "../interfaces/IBaseReceivable.sol";
+import "../interfaces/IDiscountCalculator.sol";
 
 /// @title PrimaryMarket - Manages initial sale of receivables
 /// @notice Facilitates primary market transactions between issuers and investors
 contract PrimaryMarket is ReentrancyGuard, Pausable, Ownable {
+
     IBaseReceivable public immutable receivableToken;
     IDiscountCalculator public immutable calculator;
     
@@ -20,7 +22,7 @@ contract PrimaryMarket is ReentrancyGuard, Pausable, Ownable {
     }
     
     mapping(uint256 => Listing) public listings;
-    mapping(address => uint256) public proceeds;
+    mapping(address => uint256) public sellerProceeds;
     
     event ReceivableListed(
         uint256 indexed tokenId,
@@ -76,7 +78,7 @@ contract PrimaryMarket is ReentrancyGuard, Pausable, Ownable {
         require(msg.value >= listing.price, "Insufficient payment");
         
         listings[tokenId].isActive = false;
-        proceeds[listing.seller] += msg.value;
+        sellerProceeds[listing.seller] += msg.value;
         
         receivableToken.transferFrom(listing.seller, msg.sender, tokenId);
         
@@ -99,12 +101,12 @@ contract PrimaryMarket is ReentrancyGuard, Pausable, Ownable {
     
     /// @notice Withdraws accumulated proceeds for the caller
     function withdrawProceeds() external nonReentrant {
-        uint256 proceeds = proceeds[msg.sender];
-        require(proceeds > 0, "No proceeds available");
+        uint256 pendingProceeds = sellerProceeds[msg.sender];
+        require(pendingProceeds > 0, "No proceeds available");
         
-        proceeds[msg.sender] = 0;
+        sellerProceeds[msg.sender] = 0;
         
-        (bool success, ) = payable(msg.sender).call{value: proceeds}("");
+        (bool success, ) = payable(msg.sender).call{value: pendingProceeds}("");
         require(success, "Transfer failed");
     }
     

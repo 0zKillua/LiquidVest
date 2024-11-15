@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @title IBaseReceivable - Interface for the base receivable token
 /// @notice Defines core functionality for receivable tokens
-interface IBaseReceivable {
+interface IBaseReceivable is IERC721 {
     enum RiskTier { LOW, MEDIUM, HIGH }
     enum ReceivableStatus { ACTIVE, MATURED, DEFAULTED }
 

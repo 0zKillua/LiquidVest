@@ -2,7 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./libraries/DiscountMath.sol";
+import "../libraries/DiscountMath.sol";
 
 /// @title DiscountCalculator - Calculates discounted prices for receivables
 /// @notice Provides pricing logic based on time and risk tiers

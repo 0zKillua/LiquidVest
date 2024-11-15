@@ -29,10 +29,12 @@ contract AccessController is AccessControl, Pausable {
         string description;
         bool isActive;
         uint256 maxMembers;
+        uint256 memberCount;
     }
 
     mapping(bytes32 => RoleData) public roleInfo;
     mapping(address => mapping(bytes32 => uint256)) public lastActionTimestamp;
+    mapping(bytes32 => mapping(uint256 => address)) private roleMembers;
     
     uint256 public constant COOLDOWN_PERIOD = 1 hours;
     
@@ -46,6 +48,18 @@ contract AccessController is AccessControl, Pausable {
         address indexed account,
         bytes32 indexed role,
         bytes4 indexed selector
+    );
+
+    event RoleMemberAdded(
+        bytes32 indexed role,
+        address indexed account,
+        address indexed sender
+    );
+
+    event RoleMemberRemoved(
+        bytes32 indexed role,
+        address indexed account,
+        address indexed sender
     );
 
     constructor() {
@@ -87,6 +101,10 @@ contract AccessController is AccessControl, Pausable {
             "Emergency pause rights",
             3
         );
+
+        // Initialize member count for admin role
+        roleInfo[ADMIN_ROLE].memberCount = 1;
+        roleMembers[ADMIN_ROLE][0] = msg.sender;
     }
 
     /// @notice Configure a role's parameters
@@ -104,7 +122,8 @@ contract AccessController is AccessControl, Pausable {
             name: name,
             description: description,
             isActive: true,
-            maxMembers: maxMembers
+            maxMembers: maxMembers,
+            memberCount: 0
         });
 
         emit RoleConfigured(role, name, maxMembers);
@@ -136,8 +155,8 @@ contract AccessController is AccessControl, Pausable {
         address account,
         bytes32 role,
         bytes4 selector
-    ) external {
-        require(hasRole(ADMIN_ROLE, msg.sender), "Unauthorized");
+    ) external onlyRole(ADMIN_ROLE) {
+        require(canPerform(account, role, selector), "Operation not allowed");
         
         lastActionTimestamp[account][role] = block.timestamp;
         
@@ -153,11 +172,17 @@ contract AccessController is AccessControl, Pausable {
     ) external onlyRole(ADMIN_ROLE) {
         require(roleInfo[role].isActive, "Role not active");
         require(
-            getRoleMemberCount(role) < roleInfo[role].maxMembers,
+            roleInfo[role].memberCount < roleInfo[role].maxMembers,
             "Max members reached"
         );
-        
-        grantRole(role, account);
+        require(account != address(0), "Invalid address");
+        require(!hasRole(role, account), "Role already granted");
+
+        roleMembers[role][roleInfo[role].memberCount] = account;
+        roleInfo[role].memberCount++;
+        _grantRole(role, account);
+
+        emit RoleMemberAdded(role, account, msg.sender);
     }
 
     /// @notice Revoke a role from an account
@@ -167,7 +192,39 @@ contract AccessController is AccessControl, Pausable {
         bytes32 role,
         address account
     ) external onlyRole(ADMIN_ROLE) {
-        revokeRole(role, account);
+        require(hasRole(role, account), "Role not granted");
+        require(role != ADMIN_ROLE || roleInfo[ADMIN_ROLE].memberCount > 1, "Cannot remove last admin");
+
+        // Remove member and reorganize array
+        for (uint256 i = 0; i < roleInfo[role].memberCount; i++) {
+            if (roleMembers[role][i] == account) {
+                roleMembers[role][i] = roleMembers[role][roleInfo[role].memberCount - 1];
+                delete roleMembers[role][roleInfo[role].memberCount - 1];
+                break;
+            }
+        }
+
+        roleInfo[role].memberCount--;
+        _revokeRole(role, account);
+
+        emit RoleMemberRemoved(role, account, msg.sender);
+    }
+
+    /// @notice Get the number of members for a role
+    /// @param role The role to query
+    function getRoleMemberCount(bytes32 role) public view returns (uint256) {
+        return roleInfo[role].memberCount;
+    }
+
+    /// @notice Get a member of a role by index
+    /// @param role The role to query
+    /// @param index The index of the member to get
+    function getRoleMember(
+        bytes32 role,
+        uint256 index
+    ) public view returns (address) {
+        require(index < roleInfo[role].memberCount, "Index out of bounds");
+        return roleMembers[role][index];
     }
 
     /// @notice Update role configuration
@@ -183,11 +240,15 @@ contract AccessController is AccessControl, Pausable {
     ) external onlyRole(ADMIN_ROLE) {
         require(maxMembers > 0, "Invalid max members");
         require(
-            maxMembers >= getRoleMemberCount(role),
+            maxMembers >= roleInfo[role].memberCount,
             "Below current member count"
         );
         
-        _configureRole(role, name, description, maxMembers);
+        roleInfo[role].name = name;
+        roleInfo[role].description = description;
+        roleInfo[role].maxMembers = maxMembers;
+
+        emit RoleConfigured(role, name, maxMembers);
     }
 
     /// @notice Deactivate a role

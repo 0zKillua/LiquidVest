@@ -112,7 +112,7 @@ contract FeeController is Ownable, ReentrancyGuard, Pausable {
         uint256 amount,
         bool isSecondary,
         bool isEarlyExit
-    ) external nonReentrant whenNotPaused returns (uint256) {
+    ) external payable nonReentrant whenNotPaused returns (uint256) {
         require(authorizedMarkets[msg.sender], "Unauthorized market");
         
         uint256 feeAmount;

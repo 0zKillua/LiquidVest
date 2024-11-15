@@ -4,8 +4,8 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "./interfaces/IBaseReceivable.sol";
-import "./interfaces/IEscrowVault.sol";
+import "../interfaces/IBaseReceivable.sol";
+import "../interfaces/IEscrowVault.sol";
 
 
 /*
@@ -61,60 +61,51 @@ contract PayoutManager is ReentrancyGuard, Ownable, Pausable {
 
     /// @notice Process payout for a matured receivable
     /// @param tokenId The ID of the receivable token
-    function processPayout(
-        uint256 tokenId
-    ) external nonReentrant whenNotPaused {
-        require(
-            receivableToken.isMatured(tokenId),
-            "Receivable not matured"
-        );
+    function processPayout(uint256 tokenId) external nonReentrant whenNotPaused {
+        require(receivableToken.isMatured(tokenId), "Receivable not matured");
         require(!payouts[tokenId].isPaid, "Already paid");
         
         address currentHolder = receivableToken.ownerOf(tokenId);
-        (
-            address issuer,
-            uint256 faceValue,
-            uint256 vestingTimestamp,
-            ,
-            bool isPaid
-        ) = receivableToken.getReceivable(tokenId);
         
-        require(!isPaid, "Receivable already settled");
+        // Get the full receivable struct
+        IBaseReceivable.Receivable memory receivableData = receivableToken.getReceivable(tokenId);
+        
+        require(!receivableData.isPaid, "Receivable already settled");
         require(
-            block.timestamp <= vestingTimestamp + GRACE_PERIOD,
+            block.timestamp <= receivableData.vestingTimestamp + GRACE_PERIOD,
             "Grace period expired"
         );
-
+    
         // Check if issuer has sufficient collateral
-        uint256 requiredCollateral = (faceValue * collateralRate) / 10000;
+        uint256 requiredCollateral = (receivableData.faceValue * collateralRate) / 10000;
         require(
-            issuerCollateral[issuer] >= requiredCollateral,
+            issuerCollateral[receivableData.issuer] >= requiredCollateral,
             "Insufficient collateral"
         );
-
+    
         // Process the payout
         bool success = escrowVault.releaseFunds(
             tokenId,
             currentHolder,
-            faceValue
+            receivableData.faceValue
         );
         require(success, "Payout failed");
-
+    
         // Update payout status
         payouts[tokenId] = PayoutStatus({
             isPaid: true,
-            paidAmount: faceValue,
+            paidAmount: receivableData.faceValue,
             paidTimestamp: block.timestamp,
             payoutReceiver: currentHolder
         });
-
+    
         // Reduce issuer collateral
-        issuerCollateral[issuer] -= requiredCollateral;
-
+        issuerCollateral[receivableData.issuer] -= requiredCollateral;
+    
         emit PayoutProcessed(
             tokenId,
             currentHolder,
-            faceValue,
+            receivableData.faceValue,
             block.timestamp
         );
     }

@@ -15,7 +15,7 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "./interfaces/IBaseReceivable.sol";
+import "../interfaces/IBaseReceivable.sol";
 
 /// @title EscrowVault - Secure storage for receivable funds
 /// @notice Manages the escrow of funds for receivable payments
@@ -67,28 +67,23 @@ contract EscrowVault is ReentrancyGuard, Ownable, Pausable {
     ) external payable nonReentrant whenNotPaused {
         require(msg.value > 0, "Must deposit funds");
         
-        (
-            address issuer,
-            uint256 faceValue,
-            ,
-            ,
-            bool isPaid
-        ) = receivableToken.getReceivable(tokenId);
+        // Get the full receivable struct
+        IBaseReceivable.Receivable memory receivableData = receivableToken.getReceivable(tokenId);
         
-        require(!isPaid, "Receivable already paid");
-        require(msg.sender == issuer, "Only issuer can deposit");
+        require(!receivableData.isPaid, "Receivable already paid");
+        require(msg.sender == receivableData.issuer, "Only issuer can deposit");
         require(
-            msg.value == faceValue,
+            msg.value == receivableData.faceValue,
             "Must deposit exact face value"
         );
-
+    
         escrowBalances[tokenId] = EscrowBalance({
             amount: msg.value,
             lockTimestamp: block.timestamp,
             isLocked: true
         });
-
-        emit FundsDeposited(tokenId, issuer, msg.value);
+    
+        emit FundsDeposited(tokenId, receivableData.issuer, msg.value);
     }
 
     /// @notice Release funds to the receivable holder
