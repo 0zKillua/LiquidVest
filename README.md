@@ -1,4 +1,6 @@
-src/
+File structure: 
+```
+- src/
 ├── core/
 │   ├── BaseReceivable.sol
 │   ├── DiscountCalculator.sol
@@ -27,3 +29,4 @@ src/
 └── mocks/
     ├── MockERC20.sol
     └── MockOracle.sol
+```
